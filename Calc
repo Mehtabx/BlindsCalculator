@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Valley Blinds Production</title>
+    <!-- Load jsPDF and AutoTable libraries for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            max-width: 600px;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        .preview-container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            max-width: 100%;
+            width: 95%;
+            display: none; /* Hidden until preview is generated */
+        }
+        h2 { text-align: center; color: #2c3e50; margin-top: 0; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: bold; font-size: 14px; }
+        input[type="text"], textarea {
+            width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; box-sizing: border-box;
+        }
+        textarea { resize: vertical; font-family: monospace; }
+        .help-text { font-size: 12px; color: #666; margin-top: 5px; }
+        
+        button {
+            width: 100%; padding: 12px; background-color: #2980b9; color: #fff; border: none; border-radius: 5px;
+            font-size: 16px; font-weight: bold; cursor: pointer; transition: background-color 0.3s;
+        }
+        button:hover { background-color: #1a5276; }
+        .btn-success { background-color: #27ae60; margin-top: 20px; }
+        .btn-success:hover { background-color: #1e8449; }
+
+        /* Table Styles for Preview */
+        .table-responsive { overflow-x: auto; margin-top: 15px; }
+        table { width: 100%; border-collapse: collapse; min-width: 1200px; font-size: 12px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        th { background-color: #2c3e50; color: white; white-space: nowrap; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Valley Blinds</h2>
+    <div style="text-align: center; margin-bottom: 20px; color: #7f8c8d; font-size: 14px;">Zebra Shades Production Generator</div>
+    
+    <div class="form-group">
+        <label for="colorName">Fabric Color / Name:</label>
+        <input type="text" id="colorName" placeholder="e.g., White Pearl, Grey Blackout...">
+    </div>
+
+    <div class="form-group">
+        <label for="measurements">Measurements (Width x Height):</label>
+        <textarea id="measurements" rows="8" placeholder="45 1/4 x 45 1/2&#10;69 1/4 x 57 1/2&#10;33 3/8 x 33 1/2"></textarea>
+        <div class="help-text">Drop one measurement per line. Format must be "Width x Height".</div>
+    </div>
+
+    <button onclick="generatePreview()">Preview Production Sheet</button>
+</div>
+
+<div class="preview-container" id="previewSection">
+    <h3 style="text-align: center; color: #2c3e50; margin-top: 0;">Production Preview</h3>
+    <div class="table-responsive">
+        <table id="previewTable">
+            <thead>
+                <tr>
+                    <th>Index</th>
+                    <th>Room/Label</th>
+                    <th>Width</th>
+                    <th>Height</th>
+                    <th>Headrail</th>
+                    <th>Sleeve</th>
+                    <th>Product</th>
+                    <th>Material</th>
+                    <th>Factor</th>
+                    <th>Control</th>
+                    <th>Lift Style</th>
+                    <th>Fabric Width</th>
+                    <th>Bottom Cylinder</th>
+                    <th>Bottom Tube</th>
+                    <th>Fascia</th>
+                    <th>Fabric Height</th>
+                    <th>Fabric Length</th>
+                    <th>Tube</th>
+                </tr>
+            </thead>
+            <tbody id="previewBody">
+                <!-- Data will be injected here -->
+            </tbody>
+        </table>
+    </div>
+    
+    <button class="btn-success" onclick="downloadPDF()">Download Final PDF</button>
+</div>
+
+<script>
+    const DEDUCTIONS = {
+        fabric_width: -1.125,
+        bottom_cylinder: -0.875,
+        bottom_tube: -1.0,
+        fascia: -0.875,
+        tube: -0.375
+    };
+
+    let globalTableData = [];
+
+    function parseFraction(str) {
+        const parts = str.trim().split(/\s+/);
+        let total = 0.0;
+        parts.forEach(p => {
+            if (p.includes('/')) {
+                const [num, den] = p.split('/');
+                total += parseFloat(num) / parseFloat(den);
+            } else {
+                total += parseFloat(p);
+            }
+        });
+        return total;
+    }
+
+    function formatFraction(val) {
+        let whole = Math.floor(val);
+        let frac = val - whole;
+        if (frac === 0) return whole.toString();
+        let eighths = Math.round(frac * 8);
+        if (eighths === 8) return (whole + 1).toString();
+        if (eighths === 0) return whole.toString();
+        let num = eighths;
+        let den = 8;
+        while (num % 2 === 0 && den % 2 === 0) { num /= 2; den /= 2; }
+        if (whole === 0) return `${num}/${den}`;
+        return `${whole} ${num}/${den}`;
+    }
+
+    function generatePreview() {
+        const textInput = document.getElementById('measurements').value;
+        const lines = textInput.split('\n');
+        
+        globalTableData = [];
+        let index = 1;
+        const tbody = document.getElementById('previewBody');
+        tbody.innerHTML = ''; // Clear old data
+
+        lines.forEach(line => {
+            if (!line.trim()) return;
+            const parts = line.toLowerCase().split('x');
+            if (parts.length === 2) {
+                const wStr = parts[0].trim();
+                const hStr = parts[1].trim();
+                
+                const w = parseFraction(wStr);
+                const h = parseFraction(hStr);
+
+                const fabricWidth = formatFraction(w + DEDUCTIONS.fabric_width);
+                const btmCylinder = formatFraction(w + DEDUCTIONS.bottom_cylinder);
+                const btmTube = formatFraction(w + DEDUCTIONS.bottom_tube);
+                const fascia = formatFraction(w + DEDUCTIONS.fascia);
+                const tube = formatFraction(w + DEDUCTIONS.tube);
+                const fabricHeight = formatFraction((h * 2) + 3.25);
+                const fabricLength = formatFraction(h + 1.375);
+
+                const rowData = [
+                    index.toString(),
+                    `Blind ${index}`,
+                    wStr,
+                    hStr,
+                    "Square Fascia",
+                    "N/A",
+                    "Not specified",
+                    "Plastic Beads",
+                    "-", // Factor
+                    "Right",
+                    "Corded",
+                    fabricWidth,
+                    btmCylinder,
+                    btmTube,
+                    fascia,
+                    fabricHeight,
+                    fabricLength,
+                    tube
+                ];
+
+                globalTableData.push(rowData);
+                
+                // Add to HTML Table
+                const tr = document.createElement('tr');
+                rowData.forEach(cellData => {
+                    const td = document.createElement('td');
+                    td.textContent = cellData;
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+                
+                index++;
+            }
+        });
+
+        if (globalTableData.length === 0) {
+            alert("Please enter valid measurements in 'Width x Height' format.");
+            return;
+        }
+
+        // Show the preview section
+        document.getElementById('previewSection').style.display = 'block';
+        // Scroll down to preview
+        document.getElementById('previewSection').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function downloadPDF() {
+        const colorName = document.getElementById('colorName').value || 'Not Specified';
+        
+        // Initialize jsPDF in Landscape format
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'landscape', format: 'legal' }); // Used legal format to fit 18 columns nicely
+
+        // Add Header Texts
+        doc.setFontSize(18);
+        doc.text("Valley Blinds - Zebra Shades Production Sheet", 14, 20);
+        
+        doc.setFontSize(11);
+        doc.setTextColor(100);
+        doc.text(`Color / Material: ${colorName}`, 14, 28);
+        doc.text(`Date: ${new Date().toLocaleDateString()}`, 14, 34);
+
+        // Map column headers exactly as seen in the UI
+        const headers = [[
+            'Index', 'Room/Label', 'Width', 'Height', 'Headrail', 'Sleeve', 'Product', 
+            'Material', 'Factor', 'Control', 'Lift Style', 
+            'Fabric Width', 'Btm Cylinder', 'Btm Tube', 'Fascia', 
+            'Fabric Height', 'Fabric Length', 'Tube'
+        ]];
+
+        doc.autoTable({
+            startY: 40,
+            head: headers,
+            body: globalTableData,
+            theme: 'grid',
+            headStyles: { fillColor: [41, 128, 185], textColor: 255, fontSize: 7, halign: 'center' },
+            styles: { fontSize: 7, halign: 'center', cellPadding: 2 },
+            columnStyles: {
+                0: { cellWidth: 10 }, // Index
+                2: { cellWidth: 15 }, // Width
+                3: { cellWidth: 15 }  // Height
+            }
+        });
+
+        // Save PDF
+        doc.save(`Valley_Blinds_Production.pdf`);
+    }
+</script>
+
+</body>
+</html>
